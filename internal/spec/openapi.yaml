@@ -1,0 +1,319 @@
+openapi: 3.1.0
+info:
+  title: Matematica API
+  version: 1.0.0
+  description: Real-time math game backend with operator and expressions modes.
+servers:
+  - url: http://localhost:8080
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        '200': { description: OK }
+  /v1/expressions/next:
+    post:
+      summary: Generate next expression
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                mode:
+                  type: string
+                  enum: [mixed, int, float]
+                max_depth:
+                  type: integer
+                  default: 4
+                min_binary_ops:
+                  type: integer
+                  default: 1
+                allow_unary_start:
+                  type: boolean
+                  default: true
+      responses:
+        '200':
+          description: Expression and evaluated result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  expr: { type: string }
+                  result: { type: string }
+                  cfg:
+                    type: object
+                    properties:
+                      mode: { type: string }
+                      max_depth: { type: integer }
+                      min_binary_ops: { type: integer }
+                      allow_unary_start: { type: boolean }
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalid_json:
+                  value:
+                    error_code: INVALID_JSON
+                    message: invalid json body
+                evaluation_error:
+                  value:
+                    error_code: EVALUATION_ERROR
+                    message: failed to evaluate expression
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+  /v1/expressions/answer:
+    post:
+      summary: Submit an answer for an expression
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                expr: { type: string }
+                answer: { type: string }
+      responses:
+        '200':
+          description: Answer result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  correct: { type: boolean }
+                  expected: { type: string }
+                  time_ms: { type: integer }
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalid_json:
+                  value:
+                    error_code: INVALID_JSON
+                    message: invalid json body
+                invalid_expression:
+                  value:
+                    error_code: INVALID_EXPRESSION
+                    message: expression cannot be evaluated
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+  /v1/auth/me:
+    get:
+      summary: Get current user (Firebase auth required)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string, description: Internal user UUID }
+                  uid: { type: string }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+  /v1/profile:
+    get:
+      summary: Get current user's profile
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  display_name: { type: string }
+                  avatar_url: { type: string }
+                  username: { type: string }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+    put:
+      summary: Update profile (display name, avatar key)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                display_name: { type: string }
+                avatar_key: { type: string }
+      responses:
+        '200':
+          description: Updated profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  display_name: { type: string }
+                  avatar_url: { type: string }
+                  username: { type: string }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+    post:
+      summary: Create profile at first registration
+      description: Sets displayName, avatarKey, and a unique username.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username]
+              properties:
+                display_name: { type: string }
+                avatar_key: { type: string }
+                username: { type: string, minLength: 3, maxLength: 20, pattern: "^[a-z0-9_]+$" }
+      responses:
+        '200':
+          description: Created profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  display_name: { type: string }
+                  avatar_url: { type: string }
+                  username: { type: string }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: Username taken or profile exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                username_taken:
+                  value:
+                    error_code: USERNAME_ALREADY_TAKEN
+                    message: username already taken
+                profile_exists:
+                  value:
+                    error_code: PROFILE_ALREADY_EXISTS
+                    message: profile already exists
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+  /v1/profile/username-availability:
+    get:
+      summary: Check if a username is available
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: username
+          required: true
+          schema:
+            type: string
+            minLength: 3
+            maxLength: 20
+            pattern: '^[a-z0-9_]+$'
+      responses:
+        '200':
+          description: Availability result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  username: { type: string }
+                  available: { type: boolean }
+        '400':
+          description: Invalid username
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalid_username:
+                  value:
+                    error_code: INVALID_USERNAME
+                    message: username must be 3-20 chars [a-z0-9_]
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [error_code]
+      properties:
+        error_code:
+          type: string
+          description: Uppercase snake_case error code
+        message:
+          type: string
+  responses:
+    RateLimitExceeded:
+      description: Too many requests
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            rate_limit_exceeded:
+              value:
+                error_code: RATE_LIMIT_EXCEEDED
+                message: too many requests
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            missing_authorization:
+              value:
+                error_code: MISSING_AUTHORIZATION
+                message: missing authorization header
+            unauthorized:
+              value:
+                error_code: UNAUTHORIZED
+                message: invalid token
+    InternalError:
+      description: Server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            internal_server_error:
+              value:
+                error_code: INTERNAL_SERVER_ERROR
+                message: an unexpected error occurred
